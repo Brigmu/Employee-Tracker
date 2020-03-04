@@ -34,6 +34,12 @@ const init = () => {
             case 'Add an employee':
                 addAnEmployee();
                 break;
+            case 'View all roles':
+                viewAllRoles();
+                break;
+            case 'Add a role':
+                addARole();
+                break;
             default:
                 console.log('Something broke');
         }
@@ -43,11 +49,12 @@ const init = () => {
 init();
 
 const viewAllEmployees = () => {
-    connection.query('SELECT employee.id, employee.first_name, employee.last_name, role.title, role.salary, department.name FROM employee INNER JOIN role ON employee.role_id = role.id INNER JOIN department ON role.department_id = department.id', (err, results) =>{
+    connection.query('SELECT employee.id, employee.first_name, employee.last_name, role.title, role.salary, department.name as department FROM employee INNER JOIN role ON employee.role_id = role.id INNER JOIN department ON role.department_id = department.id', (err, results) =>{
         if(err) {
             throw err;
         }
         console.table(results);
+        init();
     })
 }
 
@@ -96,4 +103,60 @@ const addAnEmployee = () => {
             init();
         })
     }))
+}
+
+const viewAllRoles = () => {
+    connection.query('SELECT role.id, role.title, role.salary, department.name as department FROM role INNER JOIN department ON role.department_id = department.id', (err, results) =>{
+        if(err) {
+            throw err;
+        }
+        console.table(results);
+        init();
+    })
+}
+
+const addARole = () => {
+    let departments = [];
+    let choices = [];
+    connection.query('SELECT id, name FROM department', (err, results) => {
+        if(err) {
+            throw err;
+        }
+        for(let i = 0; i < results.length; i++){
+            departments.push(results[i]);
+            choices.push(results[i].name);
+        }
+        
+    });
+    inquirer.prompt([
+        {
+            type: 'input',
+            message: 'Enter role title',
+            name: 'userTitle'
+        },
+        {
+            type: 'input',
+            message: 'Enter role salary',
+            name: 'userSalary'
+        },
+        {
+            type: 'list',
+            message: 'Choose department of the role',
+            name: 'userDepartment',
+            choices: choices
+        }
+    ])
+    .then((results) => {
+        const index = choices.indexOf(results.userDepartment);
+        const departmentId = departments[index].id;
+        console.log(departmentId);
+
+        connection.query(`INSERT into role(title, salary, department_id) values('${results.userTitle}','${results.userSalary}', ${departmentId})`, (err, results) => {
+            if(err){
+                throw err;
+            };
+            console.log('Added role');
+            init();
+        })
+    })
 }
