@@ -18,7 +18,7 @@
   },
   "homepage": "https://github.com/Brigmu/Employee-Tracker#readme",
   "dependencies": {
-    "inquirer": "^7.0.6",
+    "inquirer": "6.3.1",
     "mysql": "^2.18.1"
   }
 }
