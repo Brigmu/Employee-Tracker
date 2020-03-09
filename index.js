@@ -22,7 +22,7 @@ const init = () => {
             type: 'list',
             message: 'What would you like to do?',
             name: 'userChoice',
-            choices: ['View all employees', 'Add an employee', 'Remove an employee', 'View all roles', 'Add a role', 'Remove a role', 'View all departments', 'Add a department', 'Update employee roles', 'Exit']
+            choices: ['View all employees', 'Add an employee', 'Remove an employee', 'View all roles', 'Add a role', 'Remove a role', 'View all departments', 'Add a department', 'Remove a department', 'Update employee roles', 'Exit']
         }
     ])
     .then((response) =>{
@@ -50,6 +50,9 @@ const init = () => {
                 break;
             case 'Add a department':
                 addADepartment();
+                break;
+            case 'Remove a department':
+                removeADepartment();
                 break;
             case 'Update employee roles':
                 updateEmployeeRole();
@@ -365,7 +368,6 @@ const removeARole = () => {
 }
 
 const updateEmployeesRemovedRole = (role, removedID, employeesOfRemovedId) => {
-    console.log(role);
     inquirer.prompt([
         {
             type: 'list',
@@ -425,7 +427,7 @@ const updateEmployeesRemovedRole = (role, removedID, employeesOfRemovedId) => {
     
 }
 
-const updateIndividualEmployeeRoles = (role, employeesOfRemovedId, cb) =>{
+const updateIndividualEmployeeRoles = (role, employeesOfRemovedId) =>{
     inquirer.prompt([
         {
             type: 'list',
@@ -481,6 +483,168 @@ const updateIndividualEmployeeRoles = (role, employeesOfRemovedId, cb) =>{
                     })
             })
         })    
+}
+
+const removeADepartment = () =>{
+    let choices = [];
+    let ids = [];
+    connection.query('SELECT id, name FROM department', (err, results) => {
+        if(err) throw err;
+        for(let i = 0; i < results.length; i++) {
+            choices.push(results[i].name);
+            ids.push(results[i].id);
+        }
+        inquirer.prompt([
+            {
+                type: 'list',
+                message: 'Select which department to remove',
+                name: 'userChoice',
+                choices: choices
+            }
+        ])
+        .then((results) => {
+            const departmentIndex = choices.indexOf(results.userChoice);
+            const id = ids[departmentIndex];
+            const department = results.userChoice;
+
+            connection.query('SELECT title FROM role WHERE department_id = ?', [id], (err, results) =>{
+                if(err) throw err;
+
+                if(results.length === 0){
+                    connection.query('DELETE FROM department WHERE name = ?', [department], (err, results) =>{
+                        if(err) throw err;
+                        console.log(`Removed ${department} from database`);
+                        init();
+                    })
+                } else {
+                    let roleChoices = [];
+                    for(let i = 0; i < results.length; i++){
+                        roleChoices.push(results[i].title);   
+                    }
+                    updateRolesDepartments(department, id, roleChoices);
+                }
+            })
+        });
+    })
+}
+
+const updateRolesDepartments = (department, removedID, roleOfRemovedDepartment) =>{
+    inquirer.prompt([
+        {
+            type: 'list',
+            message: `You have may have roles whose department is ${department} and must update them. Would you like to update all or handle individually?`,
+            name: 'updatePrompt',
+            choices: ['Update all', 'Handle individually']
+        }
+    ])
+        .then((results) => {
+            if (results.updatePrompt === 'Update all') {
+                let choices = [];
+                let ids = [];
+
+                connection.query('SELECT id, name FROM department', (err, results) => {
+                    if (err) throw err;
+
+                    for (let i = 0; i < results.length; i++) {
+                        if (results[i].name !== department) {
+                            choices.push(results[i].name);
+                            ids.push(results[i].id);
+                        }
+                    }
+
+                    inquirer.prompt([
+                        {
+                            type: 'list',
+                            message: 'Select department to which you want to update all roles who had the removed department',
+                            name: 'userResponse',
+                            choices: choices
+                        }
+                    ])
+                    .then((results) => {
+                        const departmentIndex = choices.indexOf(results.userResponse);
+                        const id = ids[departmentIndex];
+                        connection.query('UPDATE role SET department_id = ? WHERE department_id = ?', [id, removedID], (err, results) => {
+                            if (err) throw err;
+                            console.log('Updated roles');
+                            // cb(results);
+                            // init();
+
+                            if(results.affectRows === 0){
+                                console.log('Failed to update');
+                            } else {
+                                connection.query('DELETE FROM department where name = ?', [department], (err, results) => {
+                                    if(err) throw err;
+                                    console.log(`Removed ${department} from departments`);
+                                    init();
+                                })
+                            }
+                        });
+                    })
+                });
+
+            } else {
+                updateIndividualRoleDepartments(department, roleOfRemovedDepartment);
+            }
+        });
+}
+
+const updateIndividualRoleDepartments = (department, rolesOfRemovedID) => {
+    inquirer.prompt([
+        {
+            type: 'list',
+            message: 'Pick which role to update',
+            name: 'userChoice',
+            choices: rolesOfRemovedID
+        }
+    ])
+    .then((results) => {
+        const roleTitle = results.userChoice;
+        let index = rolesOfRemovedID.indexOf(roleTitle);
+        rolesOfRemovedID.splice(index, 1);
+        let choices = [];
+        let ids = [];
+
+        connection.query('SELECT id, name FROM department', (err, results) => {
+            if (err) throw err;
+
+            for (let i = 0; i < results.length; i++) {
+                if (results[i].name !== department) {
+                    choices.push(results[i].name);
+                    ids.push(results[i].id);
+                }
+            }
+            inquirer.prompt([
+                {
+                    type: 'list',
+                    message: 'Select department to which you want to update the chosen role',
+                    name: 'userResponse',
+                    choices: choices
+                }
+            ])
+            .then((results) => {
+                const departmentIndex = choices.indexOf(results.userResponse);
+                const id = ids[departmentIndex];
+
+                connection.query('UPDATE role SET department_id = ? WHERE title = ?', [id, roleTitle], (err, results) => {
+                    if (err) throw err;
+                    console.log('Updated roles');
+                    // k++;
+                    // init();
+                    if(rolesOfRemovedID.length === 0) {
+                            connection.query('DELETE FROM department where name = ?', [department], (err, results) => {
+                                if(err) throw err;
+                                console.log(`Removed ${department} from departments`);
+                                init();
+                            });
+                    }
+                    else{
+                        updateIndividualRoleDepartments(department, rolesOfRemovedID);
+                    }
+                    // cb();
+                });
+            });
+        })
+    });
 }
 
 const checkUserInputs = (...inputs) =>{
