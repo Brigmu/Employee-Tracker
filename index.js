@@ -22,7 +22,7 @@ const init = () => {
             type: 'list',
             message: 'What would you like to do?',
             name: 'userChoice',
-            choices: ['View all employees', 'Add an employee', 'Remove an employee', 'View all roles', 'Add a role', 'Remove a role', 'View all departments', 'Add a department', 'Remove a department', 'Update employee roles', 'Exit']
+            choices: ['View all employees', 'Add an employee', 'Remove an employee', 'View all roles', 'Add a role', 'Remove a role', 'View all departments', 'Add a department', 'Remove a department', 'Update employee roles', 'Update employee manager', 'Exit']
         }
     ])
     .then((response) =>{
@@ -57,6 +57,9 @@ const init = () => {
             case 'Update employee roles':
                 updateEmployeeRole();
                 break;
+            case 'Update employee manager':
+                updateEmployeeManager();
+                break;
             case 'Exit':
                 connection.end();
                 break;
@@ -64,12 +67,16 @@ const init = () => {
                 console.log('Something broke');
         }
     })
+    .catch((err) =>{
+        console.log(err);
+        init();
+    })
 }
 
 
 
 const viewAllEmployees = () => {
-    connection.query('SELECT employee.id, employee.first_name, employee.last_name, role.title, role.salary, department.name as department FROM employee INNER JOIN role ON employee.role_id = role.id INNER JOIN department ON role.department_id = department.id', (err, results) =>{
+    connection.query('SELECT employee.id, employee.first_name, employee.last_name, CONCAT(m.first_name, " ", m.last_name) manager, role.title, role.salary, department.name as department FROM employee INNER JOIN role ON employee.role_id = role.id INNER JOIN department ON role.department_id = department.id left outer join employee m ON employee.manager_id = m.id', (err, results) =>{
         if(err) {
             throw err;
         }
@@ -110,26 +117,80 @@ const addAnEmployee = () => {
         }
     ])
     .then((results => {
-        const checkUser = checkUserInputs(results.userFirstName, results.userLastName);
-        console.log(checkUser);
+        const firstName = results.userFirstName.trim();
+        const lastName = results.userLastName.trim();
+        const checkUser = checkUserInputs(firstName, lastName);
         if (!checkUser) {
             const index = choices.indexOf(results.userRole);
             const roleId = roles[index].id;
-            console.log(roleId);
+            inquirer.prompt([
+                {
+                    type: 'list',
+                    message: 'Would you like to assign a manager?',
+                    name: 'userResponse',
+                    choices: ['Yes', 'No']
+                }
+            ])
+            .then((results) => {
+                if(results.userResponse === 'No') {
+                    connection.query(`INSERT into employee(first_name, last_name, role_id) values(?, ?, ?)`, [firstName, lastName, roleId], (err, results) => {
+                        if (err) {
+                            throw err;
+                        };
+                        console.log('Added employee');
+                        init();
+                    })
+                } else {
+                    connection.query('SELECT id, first_name, last_name FROM employee', (err, results) => {
+                        if(err) throw err;
 
-            connection.query(`INSERT into employee(first_name, last_name, role_id) values(?, ?, ?)`, [results.userFirstName.trim(), results.userLastName.trim(), roleId], (err, results) => {
-                if (err) {
-                    throw err;
-                };
-                console.log('Added employee');
+                        let managerChoices = [];
+                        let managerIds = [];
+                        for(let i = 0; i < results.length; i++) {
+                            managerChoices.push(`${results[i].first_name} ${results[i].last_name}`);
+                            managerIds.push(results[i].id);
+                        }
+                        inquirer.prompt([
+                            {
+                                type: 'list',
+                                message: 'Select who should be their manager',
+                                name: 'newManager',
+                                choices: managerChoices
+                            }
+                        ])
+                        .then((results) => {
+                            const managerIndex = managerChoices.indexOf(results.newManager);
+                            const managerId = managerIds[managerIndex];
+
+                            connection.query(`INSERT into employee(first_name, last_name, role_id, manager_id) values(?, ?, ?, ?)`, [firstName, lastName, roleId, managerId], (err, results) => {
+                                if (err) {
+                                    throw err;
+                                };
+                                console.log('Added employee');
+                                init();
+                            })
+                        })
+                    })
+                }
+
+            })
+            .catch((err) =>{
+                console.log(err);
                 init();
             })
+            
+
+            
         }
         else {
-            console.log('Invalid input');
+            console.log('Invalid input, must contain at least 1 character and no more than 30');
             init();
         }
     }))
+    .catch((err) =>{
+        console.log(err);
+        init();
+    })
 }
 
 const viewAllRoles = () => {
@@ -174,23 +235,33 @@ const addARole = () => {
         }
     ])
     .then((results) => {
-        const checkUser = checkUserInputs(results.userTitle, results.userSalary);
+        const newTitle = results.userTitle.trim();
+        const checkUser = checkUserInputs(newTitle);
+        const intCheck = typeof results.userSalary;
         if (!checkUser) {
-            const index = choices.indexOf(results.userDepartment);
-            const departmentId = departments[index].id;
-            console.log(departmentId);
+            if (intCheck === "number") {
+                const index = choices.indexOf(results.userDepartment);
+                const departmentId = departments[index].id;
 
-            connection.query(`INSERT into role(title, salary, department_id) values(?, ?, ?)`, [results.userTitle.trim(), results.userSalary.trim(), departmentId], (err, results) => {
-                if (err) {
-                    throw err;
-                };
-                console.log('Added role');
+                connection.query(`INSERT into role(title, salary, department_id) values(?, ?, ?)`, [newTitle, results.userSalary.trim(), departmentId], (err, results) => {
+                    if (err) {
+                        throw err;
+                    };
+                    console.log('Added role');
+                    init();
+                })
+            } else {
+                console.log('Invalid input. Salary must be a number');
                 init();
-            })
+            }
         } else {
-            console.log('Invalid Input');
+            console.log('Invalid input, must contain at least 1 character and no more than 30');
             init();
         }
+    })
+    .catch((err) =>{
+        console.log(err);
+        init();
     })
 }
 
@@ -213,9 +284,10 @@ const addADepartment = () => {
         }
     ])
     .then((results) => {
-        const checkUser = checkUserInputs(results.userDepartment);
+        const newDepartment = results.userDepartment.trim();
+        const checkUser = checkUserInputs(newDepartment);
         if (!checkUser) {
-            connection.query(`INSERT into department(name) values(?)`, [results.userDepartment.trim()], (err, results) => {
+            connection.query(`INSERT into department(name) values(?)`, [newDepartment], (err, results) => {
                 if (err) {
                     throw err;
                 }
@@ -223,9 +295,13 @@ const addADepartment = () => {
                 init();
             })
         } else {
-            console.log('Invalid Input');
+            console.log('Invalid input, must contain at least 1 character and no more than 30');
             init();
         }
+    })
+    .catch((err) =>{
+        console.log(err);
+        init();
     })
 }
 
@@ -288,7 +364,15 @@ const updateEmployeeRole = () => {
                         init();
                     })
                 })
+                .catch((err) =>{
+                    console.log(err);
+                    init();
+                })
             })
+        })
+        .catch((err) =>{
+            console.log(err);
+            init();
         })
 
     })
@@ -317,6 +401,10 @@ const removeAnEmployee = () => {
                 console.log(`Removed ${results.userChoice} from database`);
                 init();
             })
+        })
+        .catch((err) =>{
+            console.log(err);
+            init();
         })
     })
 
@@ -363,6 +451,10 @@ const removeARole = () => {
                 }
             })
             
+        })
+        .catch((err) =>{
+            console.log(err);
+            init();
         })
     })
 }
@@ -422,7 +514,12 @@ const updateEmployeesRemovedRole = (role, removedID, employeesOfRemovedId) => {
             } else {
                 updateIndividualEmployeeRoles(role, employeesOfRemovedId);
             }
-        });
+        })
+        .catch((err) =>{
+            console.log(err);
+            init();
+        })
+        
     
     
 }
@@ -481,8 +578,16 @@ const updateIndividualEmployeeRoles = (role, employeesOfRemovedId) =>{
                             // cb();
                         });
                     })
+                    .catch((err) =>{
+                        console.log(err);
+                        init();
+                    })
             })
-        })    
+        })  
+        .catch((err) =>{
+            console.log(err);
+            init();
+        })  
 }
 
 const removeADepartment = () =>{
@@ -524,7 +629,11 @@ const removeADepartment = () =>{
                     updateRolesDepartments(department, id, roleChoices);
                 }
             })
-        });
+        })
+        .catch((err) =>{
+            console.log(err);
+            init();
+        })
     })
 }
 
@@ -580,12 +689,20 @@ const updateRolesDepartments = (department, removedID, roleOfRemovedDepartment) 
                             }
                         });
                     })
+                    .catch((err) =>{
+                        console.log(err);
+                        init();
+                    })
                 });
 
             } else {
                 updateIndividualRoleDepartments(department, roleOfRemovedDepartment);
             }
-        });
+        })
+        .catch((err) =>{
+            console.log(err);
+            init();
+        })
 }
 
 const updateIndividualRoleDepartments = (department, rolesOfRemovedID) => {
@@ -642,9 +759,71 @@ const updateIndividualRoleDepartments = (department, rolesOfRemovedID) => {
                     }
                     // cb();
                 });
-            });
+            })
+            .catch((err) =>{
+                console.log(err);
+                init();
+            })
         })
-    });
+    })
+    .catch((err) =>{
+        console.log(err);
+        init();
+    })
+}
+
+const updateEmployeeManager = () =>{
+    let choices = [];
+    let ids = [];
+    connection.query('SELECT id, first_name, last_name FROM employee', (err, results) => {
+        if(err) throw err;
+        for(let i = 0; i < results.length; i++) {
+            choices.push(`${results[i].first_name} ${results[i].last_name}`);
+            ids.push(results[i].id);
+        };
+
+        inquirer.prompt([
+            {
+                type: 'list',
+                message: 'Select which employee whose manager you would like to update',
+                name: 'userChoice',
+                choices: choices
+            }
+        ])
+        .then((results) => {
+            const firstName = results.userChoice.split(' ')[0];
+            const lastName = results.userChoice.split(' ')[1];
+            const index = choices.indexOf(results.userChoice);
+            choices.splice(index, 1);
+            ids.splice(index, 1);
+
+            inquirer.prompt([
+                {
+                    type: 'list',
+                    message: 'Select which employee should be their new manager',
+                    name: 'userManager',
+                    choices: choices
+                }
+            ])
+            .then((results) => {
+                let managerIndex = choices.indexOf(results.userManager);
+                connection.query('UPDATE employee SET manager_id = ? WHERE first_name = ? AND last_name = ?', [ids[managerIndex], firstName, lastName], (err, results) =>{
+                    if(err) throw err;
+                    console.log('Updated employees Manager');
+                    init();
+                })
+            })
+            .catch((err) =>{
+                console.log(err);
+                init();
+            })
+        })
+        .catch((err) =>{
+            console.log(err);
+            init();
+        })
+    })
+    
 }
 
 const checkUserInputs = (...inputs) =>{
